@@ -3,14 +3,15 @@
 在ubuntu 05.04配置old-releases.ubuntu.com源;（可以看看还有没有其他源，#L10）
 安装编译工具、Samba等
 编译linux-2.6.10和busybox-1.0.0。如果menuconfig时没有ncurses库，安装libncurses5-dev。
+
 把busybox打包成rootfs.img:
 ```
 dd if=/dev/zero of=rootfs.img bs=1M count=5
 mkfs.ext3 ./rootfs.img
-Mount –t ext3 –o loop ./rootfs.img /path/to/rootfs
-Cp busybox/_install/* -R /path/to/rootfs/
-Mknod, edit init file etc…
-Umount /path/to/rootfs
+mount -t ext3 -o loop ./rootfs.img /path/to/rootfs
+cp busybox/_install/* -R /path/to/rootfs/
+mknod, edit init file, etc…
+umount /path/to/rootfs （执行时不要在该目录，否则它会busy）
 ```
 这样rootfs.img就已经是一个有根目录的硬盘镜像了。
 
@@ -20,16 +21,16 @@ Umount /path/to/rootfs
 
 3. 开搞：
 ```
-qemu-system-i386 -curses -kernel bzImage -hda rootfs.img -append "root=/dev/had" -S -s
+qemu-system-i386 -curses -kernel bzImage -hda rootfs.img -append "root=/dev/hda" -S -s
 ```
 
 再开一个终端：
 ```
-Gdb vmlinux
-Target remote :1234
+gdb vmlinux
+target remote :1234
 ```
 
-每次输入两条命令挺烦，可以创建.gdbinit
+每次输入两条命令挺烦，可以创建.gdbinit，之后直接gdb就OK了。
 ```
 cat >.gdbinit << "EOF"
 file vmlinux
