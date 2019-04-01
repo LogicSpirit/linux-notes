@@ -137,13 +137,68 @@ page_pde_offset = (__PAGE_OFFSET >> 20);
 ```
 这段代码设置最初启动时候的页表。swapper_pg_dir是在.bss.page_aligned段分配的静态空间，用来存放启动阶段的页目录。pg0是链接脚本中定义的,该位置是_end之后的4k对其的地址，其后
 用于存放启动时候使用的页表，由于页表的大小跟启动阶段要管理的内存大小相关（从0到页表结束），所以页表的建立比较难懂。最终页表结束位置的物理地址保存在init_pg_tables_end变量
-中，该变量在某个C文件中定义。
+中，该变量在某个C文件中定义。在2.6.10内核中该地址不超过8M，即启动时才用了两张页表。
 
 引导CPU(BSP)把ebx清零，跳过smp代码。
-设置cr3位swapper_pg_dir的物理地址，修改cr0启动分页。设置栈空间，该栈分配在swapper_pg_dir之后的一个页，也在.bss.page_aligned段。
+Enable paging:设置cr3位swapper_pg_dir的物理地址，修改cr0启动分页。设置栈空间，该栈分配在swapper_pg_dir之后的一个页，也在.bss.page_aligned段。
 清零EFLAGS
-设置idt：
+setup_idt：idt_table[256]数组在trap.c中定义，放置在.data.idt段。setup_idt在idt_table中写入默认表项，所有的中断处理过程都是ignore_int，只是printk打印一些参数。
+把启动参数从bootloader存放的位置复制到boot_params数组中，boot_params在.init.data段。其中启动命令行被保存到saved_command_line中，是BootLoader传给内核的启动字符串。
+checkCPUtype:(#L5)
+check_x87:(#L6)
+加载新的gdt和idt:使用cpu_gdt_table，有32个表项，进行Flat地址映射。idt没变化。
+```
+ENTRY(cpu_gdt_table)
+	.quad 0x0000000000000000	/* NULL descriptor */
+	.quad 0x0000000000000000	/* 0x0b reserved */
+	.quad 0x0000000000000000	/* 0x13 reserved */
+	.quad 0x0000000000000000	/* 0x1b reserved */
+	.quad 0x0000000000000000	/* 0x20 unused */
+	.quad 0x0000000000000000	/* 0x28 unused */
+	.quad 0x0000000000000000	/* 0x33 TLS entry 1 */
+	.quad 0x0000000000000000	/* 0x3b TLS entry 2 */
+	.quad 0x0000000000000000	/* 0x43 TLS entry 3 */
+	.quad 0x0000000000000000	/* 0x4b reserved */
+	.quad 0x0000000000000000	/* 0x53 reserved */
+	.quad 0x0000000000000000	/* 0x5b reserved */
 
+	.quad 0x00cf9a000000ffff	/* 0x60 kernel 4GB code at 0x00000000 */
+	.quad 0x00cf92000000ffff	/* 0x68 kernel 4GB data at 0x00000000 */
+	.quad 0x00cffa000000ffff	/* 0x73 user 4GB code at 0x00000000 */
+	.quad 0x00cff2000000ffff	/* 0x7b user 4GB data at 0x00000000 */
+
+	.quad 0x0000000000000000	/* 0x80 TSS descriptor */
+	.quad 0x0000000000000000	/* 0x88 LDT descriptor */
+
+	/* Segments used for calling PnP BIOS */
+	.quad 0x00c09a0000000000	/* 0x90 32-bit code */
+	.quad 0x00809a0000000000	/* 0x98 16-bit code */
+	.quad 0x0080920000000000	/* 0xa0 16-bit data */
+	.quad 0x0080920000000000	/* 0xa8 16-bit data */
+	.quad 0x0080920000000000	/* 0xb0 16-bit data */
+	/*
+	 * The APM segments have byte granularity and their bases
+	 * and limits are set at run time.
+	 */
+	.quad 0x00409a0000000000	/* 0xb8 APM CS    code */
+	.quad 0x00009a0000000000	/* 0xc0 APM CS 16 code (16 bit) */
+	.quad 0x0040920000000000	/* 0xc8 APM DS    data */
+
+	.quad 0x0000000000000000	/* 0xd0 - unused */
+	.quad 0x0000000000000000	/* 0xd8 - unused */
+	.quad 0x0000000000000000	/* 0xe0 - unused */
+	.quad 0x0000000000000000	/* 0xe8 - unused */
+	.quad 0x0000000000000000	/* 0xf0 - unused */
+	.quad 0x0000000000000000	/* 0xf8 - GDT entry 31: double-fault TSS */
+```
+
+重新加载段寄存器，刷新影子寄存器（详见Intel Manual）。这里搞不懂ds寄存器为什么用的是__USER_DS(#L1)。
+
+这时候基本的内核内存映射都建立好了，跳转到start_kernel@init/main.c
+
+====================================================================================
+TODO: 
+1. smp启动分析(#4)
 
 ====================================================================================
 参考资料：ULK（understanding the Linux kernel）的system startup章节讲述了启动过程。
