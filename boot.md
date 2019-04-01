@@ -1,9 +1,10 @@
-上电后CS=0xf000,EIP=0xfff0，此后执行BIOS代码，BISO从引导介质中加载bootloader，bootloader加载内核镜像bzImage。
-由Makefile可知，bzImage由bootsect、setup和vmlinux.bin构成，bootsect和setup是运行在实模式的代码，vmlinux.bin包括压缩内核及其解压程序。
-具体家在过程，见内核文档Documentation/x86/boot.txt。
-0203版本的boot protocol中，bootsect和setup被bootloader加载到尽可能低的地址，但是gdb调试的时候不知道该位置，只能用内存搜索的方式，查找"HdrS"字符串的
-位置，得知kernel boot sector和setup被加载到0x10000的位置。
+上电后`CS=0xf000,EIP=0xfff0`，此后执行BIOS代码，BISO从引导介质中加载bootloader，bootloader加载内核镜像`bzImage`。
+由Makefile可知，`bzImage`由`bootsect`、`setup`和`vmlinux.bin`构成，`bootsect`和`setup`是运行在实模式的代码，`vmlinux.bin`包括压缩内核及其解压程序。
+具体家在过程，见内核文档`Documentation/x86/boot.txt`。
+`0203`版本的`boot protocol`中，`bootsect`和`setup`被`bootloader`加载到尽可能低的地址，但是gdb调试的时候不知道该位置，只能用内存搜索的方式，查找`HdrS`字符串的
+位置，得知`bootsect`和`setup`被加载到`0x10000`的位置。
 
+```
 (gdb) x /80x 0x101f0
 0x101f0:0x00010500 0x0000dda9 0xffff0000 0xaa551601
 0x10200:0x64482eeb 0x02035372 0x00000000 0x07b61000
@@ -12,15 +13,18 @@
 0x10230:0x000400e8 0x00000000 0x00000000 0x00000000
 0x10240:0x00000000 0x00000000 0x00000000 0x00000000
 0x10250:0x00000000 0x00000000 0x00000000 0x00000000
+```
 这里有boot header的所有参数。比如0x10228处的四个字节表示cmdline_ptr，即0x20000处存放的是bootloader启动参数。
+```
 (gdb) x /s 0x20000
 0x20000:"root=/dev/hda"
+```
 
-0x10210处的0xb0表示qemu的BootLoader。
-0x10224处的heap_end_ptr
-0x10214处的0x100000表示code32_start，内核被加载的位置。
-0x10218/4 ramdisk_image: The 32-bit linear address of the initial ramdisk or ramfs.  Leave at zero if there is no initial ramdisk/ramfs.
-0x1021C/4 ramdisk_size:  Size of the initial ramdisk or ramfs.  Leave at zero if there is no initial ramdisk/ramfs.
+`0x10210`处的`0xb0`表示qemu的BootLoader。
+`0x10224`处的`heap_end_ptr`
+`0x10214`处的`0x100000`表示`code32_start`，内核被加载的位置。
+`0x10218/4` `ramdisk_image`: The 32-bit linear address of the initial ramdisk or ramfs.  Leave at zero if there is no initial ramdisk/ramfs.
+`0x1021C/4` `ramdisk_size`:  Size of the initial ramdisk or ramfs.  Leave at zero if there is no initial ramdisk/ramfs.
 
 用BISO中断复位磁盘，BIOS中断见BIOS-int.md。
 
@@ -54,9 +58,11 @@ struct e820map {
 e801:
 mem88:
 
+`vmlinux.bin`被`BootLoader`加载到`0x100000`的物理地址上，该地址写在`setup`的`header`中，`setup`最后会跳转到这里。
+`vmlinux.bin`由`arch/i386/boot/compressed/vmlinux`经过`objcopy`得到，而`compressed/vmlinux`由`compressed`下的`head.S、misc.S、piggy.S`构成。`piggy.S`其实包含着顶层`vmlinux`压缩后的二进制数据。
+`startup_32@compressed/head.S`是程序入口，这里的函数名跟`vmlinux`中的重复并没有关系。主要完成内核代码的解压缩，并跳转到`vmlinux`。`vmlinux`的链接脚本是`arch/i386/kernel/vmlinux.lds`，其中定义的内核的段结构和程序入口。
 
-
-内核解压到0x100000物理地址上，开始执行startup_32@arch/i386/kernel/head.S。
+内核解压到`0x100000`物理地址上，开始执行`startup_32@arch/i386/kernel/head.S`。
 ```
 	lgdt boot_gdt_descr - __PAGE_OFFSET
 
@@ -74,8 +80,8 @@ ENTRY(boot_gdt_table)
 	.quad 0x00cf92000000ffff/* kernel 4GB data at 0x00000000 */
 
 ```
-刚开始这段代码连接到3GB+1MB之上，但是加载到1MB开始的物理地址，所以访存用的地址都需要- PAGE_OFFSET。
-链接脚本指出在_end之后的下一个页是pg0，用来处理early boot page tables。
+刚开始这段代码连接到`3GB+1MB`之上，但是加载到`1MB`开始的物理地址，所以访存用的地址都需要`-PAGE_OFFSET`。
+链接脚本指出在`_end`之后的下一个页是`pg0`，其之后的几个页帧用来处理`early boot page tables`。
 
 ```
 ENTRY(startup_32)
@@ -135,18 +141,16 @@ page_pde_offset = (__PAGE_OFFSET >> 20);
 	movl %edi,(init_pg_tables_end - __PAGE_OFFSET)
 
 ```
-这段代码设置最初启动时候的页表。swapper_pg_dir是在.bss.page_aligned段分配的静态空间，用来存放启动阶段的页目录。pg0是链接脚本中定义的,该位置是_end之后的4k对其的地址，其后
-用于存放启动时候使用的页表，由于页表的大小跟启动阶段要管理的内存大小相关（从0到页表结束），所以页表的建立比较难懂。最终页表结束位置的物理地址保存在init_pg_tables_end变量
-中，该变量在某个C文件中定义。在2.6.10内核中该地址不超过8M，即启动时才用了两张页表。
+这段代码设置最初启动时候的页表。`swapper_pg_dir`是在`.bss.page_aligned`段分配的静态空间，用来存放启动阶段的页目录。`pg0`是链接脚本中定义的,该位置是`_end`之后的4k对其的地址，其后 用于存放启动时候使用的页表，由于页表的大小跟启动阶段要管理的内存大小相关（从0到页表结束），所以页表的建立比较难懂。最终页表结束位置的物理地址保存在`init_pg_tables_end`变量 中，该变量在某个C文件中定义。在2.6.10内核中该地址不超过`8M`，即启动时才用了两张页表。
 
-引导CPU(BSP)把ebx清零，跳过smp代码。
-Enable paging:设置cr3位swapper_pg_dir的物理地址，修改cr0启动分页。设置栈空间，该栈分配在swapper_pg_dir之后的一个页，也在.bss.page_aligned段。
-清零EFLAGS
-setup_idt：idt_table[256]数组在trap.c中定义，放置在.data.idt段。setup_idt在idt_table中写入默认表项，所有的中断处理过程都是ignore_int，只是printk打印一些参数。
-把启动参数从bootloader存放的位置复制到boot_params数组中，boot_params在.init.data段。其中启动命令行被保存到saved_command_line中，是BootLoader传给内核的启动字符串。
-checkCPUtype:(#L5)
-check_x87:(#L6)
-加载新的gdt和idt:使用cpu_gdt_table，有32个表项，进行Flat地址映射。idt没变化。
+引导CPU(`BSP`)把`ebx`清零，跳过`smp`代码。
+Enable paging:设置`cr3`位`swapper_pg_dir`的物理地址，修改`cr0`启动分页。设置栈空间，该栈分配在`swapper_pg_dir`之后的一个页，也在`.bss.page_aligned`段。
+清零`EFLAGS`
+`setup_idt`：`idt_table[256]`数组在`trap.c`中定义，放置在`.data.idt`段。`setup_idt`在`idt_table`中写入默认表项，所有的中断处理过程都是`ignore_int`，只是`printk`打印一些参数。
+把启动参数从`bootloader`存放的位置复制到`boot_params`数组中，`boot_params`在`.init.data`段。其中启动命令行被保存到`saved_command_line`中，是`BootLoader`传给内核的启动字符串。
+`checkCPUtype`:(#L5)
+`check_x87`:(#L6)
+加载新的`gdt`和`idt`:使用`cpu_gdt_table`，有`32`个表项，进行平坦地址映射。`idt`没变化。
 ```
 ENTRY(cpu_gdt_table)
 	.quad 0x0000000000000000	/* NULL descriptor */
@@ -192,13 +196,13 @@ ENTRY(cpu_gdt_table)
 	.quad 0x0000000000000000	/* 0xf8 - GDT entry 31: double-fault TSS */
 ```
 
-重新加载段寄存器，刷新影子寄存器（详见Intel Manual）。这里搞不懂ds寄存器为什么用的是__USER_DS(#L1)。
+重新加载段寄存器，刷新影子寄存器（详见Intel Manual）。这里搞不懂`ds`寄存器为什么用的是`__USER_DS`(#L1)。
 
-这时候基本的内核内存映射都建立好了，跳转到start_kernel@init/main.c
+这时候基本的内核内存映射都建立好了，跳转到`start_kernel@init/main.c`。
 
 ====================================================================================
 TODO: 
-1. smp启动分析(#4)
+1. smp启动分析(#L4)
 
 ====================================================================================
-参考资料：ULK（understanding the Linux kernel）的system startup章节讲述了启动过程。
+参考资料：`ULK（understanding the Linux kernel）`的`system startup`章节讲述了启动过程。
