@@ -22,7 +22,7 @@ umount /path/to/rootfs （执行时不要在该目录，否则它会busy）
 
 ### 3. 开搞：
 ```
-qemu-system-i386 -curses -kernel bzImage -hda rootfs.img -append "root=/dev/hda" -S -s
+qemu-system-i386 -curses -kernel bzImage -hda rootfs.img -append "root=/dev/hda earlyprintk=vga" -S -s
 ```
 参数解析：
 - `-curses` 利用curses库在终端上模拟VGA显示。
@@ -48,6 +48,8 @@ EOF
 
 ==========================================================================================
 TODO:
-1. 中断进入qemu curses之后无法正常退出，只能强行关闭。(#L2)
-2. mount -t nfs 187.0.0.45:/nfs /nfs执行时会卡很长时间，所以没有放到启动脚本中#L9
-3. 目前需要两个虚拟机，不方便。可考虑在ubuntu1604上构建i386的交叉编译环境，编出合适版本的工具链很难。(#L20)
+- 中断进入qemu curses之后无法正常退出，只能强行关闭。(#L2)
+- 启动时的打印信息刷得太快，qemu的输出需要能保存到文档中。(#L3)
+尝试过加入-serial file:xxx -append "console=ttyS0"，但是一加入console=ttyS0，启动过程就会卡在Uncompress kernel。
+- mount -t nfs 187.0.0.45:/nfs /nfs执行时会卡很长时间，所以没有放到启动脚本中(#L9)
+- 目前需要两个虚拟机，不方便。可考虑在ubuntu1604上构建i386的交叉编译环境，编出合适版本的工具链很难。(#L20)
