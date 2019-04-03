@@ -1,5 +1,5 @@
 ### 1. 安装ubuntu 05.04
-镜像选择i386虚拟机，创建虚拟磁盘时选择IDE，否则可能不兼容;
+镜像选择i386虚拟机，创建虚拟磁盘和cdrom时选择IDE，否则可能不兼容;
 在ubuntu 05.04，修改/etc/apt/source.list，配置old-releases.ubuntu.com源;
 安装编译工具、Samba等
 编译linux-2.6.10和busybox-1.0.0。如果make menuconfig时没有ncurses库，安装libncurses5-dev。
