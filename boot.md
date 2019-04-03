@@ -145,6 +145,49 @@ page_pde_offset = (__PAGE_OFFSET >> 20);
 
 引导CPU(`BSP`)把`ebx`清零，跳过`smp`代码。
 Enable paging:设置`cr3`位`swapper_pg_dir`的物理地址，修改`cr0`启动分页。设置栈空间，该栈分配在`swapper_pg_dir`之后的一个页，也在`.bss.page_aligned`段。
+设置stack:`lss stack_start,%esp`，该指令把stack_start处存放的selector:offset加载到ss:esp。init_thread_union是一个栈大小的union，其低地址处存放的是一个sturct thread_info。所以任何时候只要把esp对齐到栈大小就能得到当前thread的thread_info指针。
+```
+.data
+ENTRY(stack_start)
+	.long init_thread_union+THREAD_SIZE
+	.long __BOOT_DS
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/*
+ * Initial thread structure.
+ *
+ * We need to make sure that this is THREAD_SIZE aligned due to the
+ * way process stacks are handled. This is done by having a special
+ * "init_task" linker map entry..
+ */
+union thread_union init_thread_union 
+	__attribute__((__section__(".data.init_task"))) =
+		{ INIT_THREAD_INFO(init_task) };
+
+/*
+ * Initial task structure.
+ *
+ * All other task structs will be allocated on slabs in fork.c
+ */
+struct task_struct init_task = INIT_TASK(init_task);
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#define INIT_THREAD_INFO(tsk)			\
+{						\
+	.task		= &tsk,			\
+	.exec_domain	= &default_exec_domain,	\
+	.flags		= 0,			\
+	.cpu		= 0,			\
+	.preempt_count	= 1,			\
+	.addr_limit	= KERNEL_DS,		\
+	.restart_block = {			\
+		.fn = do_no_restart_syscall,	\
+	},					\
+}
+
+
+```
+
 清零`EFLAGS`
 `setup_idt`：`idt_table[256]`数组在`trap.c`中定义，放置在`.data.idt`段。`setup_idt`在`idt_table`中写入默认表项，所有的中断处理过程都是`ignore_int`，只是`printk`打印一些参数。
 把启动参数从`bootloader`存放的位置复制到`boot_params`数组中，`boot_params`在`.init.data`段。其中启动命令行被保存到`saved_command_line`中，是`BootLoader`传给内核的启动字符串。
