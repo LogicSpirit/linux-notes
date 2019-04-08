@@ -477,4 +477,21 @@ data_resource.start = virt_to_phys(_etext);
 data_resource.end = virt_to_phys(_edata)-1;
 ```
 
+给conswitchp全局变量赋值。(vga_con/dummy_con)(#L5)
+
+setup_per_cpu_areas@init/main.c
+分配一段连续的内存空间，存放NR_CPUS份.data.percpu段中的数据。全局数组__per_cpu_offset[NR_CPUS]存放每个CPU的数据相对于__per_cpu_start的偏移。
+
+smp_prepare_boot_cpu@init/main.c
+在cpu_online_map和cpu_callout_map上把当前cpu(0)置位。表示cpu0已经上线。
+
+```
+/*
+ * Set up the scheduler prior starting any interrupts (such as the
+ * timer interrupt). Full topology setup happens at smp_init()
+ * time - but meanwhile we still have a functioning scheduler.
+ */
+sched_init();
+```
+初始化per_cpu的runqueue，初始化当前cpu上的idle线程数据结构。(#L4)
 
