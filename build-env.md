@@ -30,7 +30,7 @@ qemu-system-i386 -curses -kernel bzImage -hda rootfs.img -append "root=/dev/hda 
 - `-hda rootfs.img` 把制作的rootfs镜像放到虚拟hda磁盘中。
 - `-append` 指定bootloader的命令行参数，这个参数qemu bootloader会传递给内核。
 - `-S -s` 让qemu启动后停下，并连接本地调试器。
-
+**在xshell中只能使用curses模拟vga的方式显示，使用<esc>+[1/2]可以切换显示界面和控制台，在控制台下输入quit可退出qemu。**
 
 再开一个终端：
 ```
@@ -48,8 +48,7 @@ EOF
 
 ==========================================================================================
 TODO:
-- 中断进入qemu curses之后无法正常退出，只能强行关闭。(#L2)
 - 启动时的打印信息刷得太快，qemu的输出需要能保存到文档中。(#L3)
 尝试过加入-serial file:xxx -append "console=ttyS0"，但是一加入console=ttyS0，启动过程就会卡在Uncompress kernel。
 - mount -t nfs 187.0.0.45:/nfs /nfs执行时会卡很长时间，所以没有放到启动脚本中(#L9)
-- 目前需要两个虚拟机，不方便。可考虑在ubuntu1604上构建i386的交叉编译环境，编出合适版本的工具链很难。(#L20)
+- 目前需要两个虚拟机，不方便。可考虑在ubuntu1604上构建i386的交叉编译环境，编出合适版本的工具链很难(#L20)。听说好像可以在ubuntu16.04上配置snapshot.debian.org的源，安装老版本的编译环境。亲测gcc-3.4可用，但binutils没搞好，这个思路有前途(#L2)。

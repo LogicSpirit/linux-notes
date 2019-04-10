@@ -1,8 +1,7 @@
 上电后`CS=0xf000,EIP=0xfff0`，此后执行BIOS代码，BISO从引导介质中加载bootloader，bootloader加载内核镜像`bzImage`。
 由Makefile可知，`bzImage`由`bootsect`、`setup`和`vmlinux.bin`构成，`bootsect`和`setup`是运行在实模式的代码，`vmlinux.bin`包括压缩内核及其解压程序。
-具体家在过程，见内核文档`Documentation/x86/boot.txt`。
-`0203`版本的`boot protocol`中，`bootsect`和`setup`被`bootloader`加载到尽可能低的地址，但是gdb调试的时候不知道该位置，只能用内存搜索的方式，查找`HdrS`字符串的
-位置，得知`bootsect`和`setup`被加载到`0x10000`的位置。
+具体加载过程，见内核文档`Documentation/x86/boot.txt`。
+`0203`版本的`boot protocol`中，`bootsect`和`setup`被`bootloader`加载到尽可能低的地址，但是gdb调试的时候不知道该位置，只能用内存搜索的方式，查找`HdrS`字符串的 位置，得知`bootsect`和`setup`被加载到`0x10000`的位置。见mem_frame.md。
 
 ```
 (gdb) x /80x 0x101f0
@@ -146,7 +145,7 @@ page_pde_offset = (__PAGE_OFFSET >> 20);
 引导CPU(`BSP`)把`ebx`清零，跳过`smp`代码。
 Enable paging:设置`cr3`位`swapper_pg_dir`的物理地址，修改`cr0`启动分页。设置栈空间，该栈分配在`swapper_pg_dir`之后的一个页，也在`.bss.page_aligned`段。
 清零`EFLAGS`
-`setup_idt`：`idt_table[256]`数组在`trap.c`中定义，放置在`.data.idt`段。`setup_idt`在`idt_table`中写入默认表项，所有的中断处理过程都是`ignore_int`，只是`printk`打印一些参数。
+`setup_idt`：`idt_table[256]`数组在`trap.c`中定义，放置在`.data.idt`段。`setup_idt`在`idt_table`中写入默认表项，所有的中断处理过程都是`ignore_int`，只是`printk`打印一些参数。正常情况下，该中断例程不会触发。
 把启动参数从`bootloader`存放的位置复制到`boot_params`数组中，`boot_params`在`.init.data`段。其中启动命令行被保存到`saved_command_line`中，是`BootLoader`传给内核的启动字符串。
 `checkCPUtype`:(#L5)
 `check_x87`:(#L6)
