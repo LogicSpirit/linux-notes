@@ -50,12 +50,18 @@
 		~						 ~
 		|		.data			 |
 		|		.rodata			 |
-		~						 ~
+		+------------------------+ <- __stop___ex_table
 		|		__ex_table		 |
+		+------------------------+ <- __start___ex_table (16 align)
 		+------------------------+ <- _etext
-		~						 ~
+		|		.gnu.warning	 |
+		|		.fixup			 |
+		+------------------------+ <- __lock_text_end
+		|		.spinlock.text	 |
+		+------------------------+ <- __sched_text_end, __lock_text_start
+		|		.sched.text		 |
+		+------------------------+ <- __sched_text_start
         |		.text			 |
-		~						 ~
 100000  +------------------------+ <- _text
 		|  I/O memory hole		 |
 0A0000	+------------------------+
