@@ -1,24 +1,23 @@
 # start_kernel执行过程
+
 ```
 asmlinkage void __init start_kernel(void)
 {
-	char * command_line;
+	char * command_line;		//这个指针用来记录啥时候的cmdline？
 	extern struct kernel_param __start___param[], __stop___param[];
-/*
- * Interrupts are still disabled. Do necessary setups, then
- * enable them
- */
-	lock_kernel();
-	page_address_init();
-	printk(linux_banner);
-	setup_arch(&command_line);
-	setup_per_cpu_areas();
+	//中断尚未开启
+	
+	lock_kernel();			// 见spinlock.md(#L4)
+	page_address_init();	//TODO
+	printk(linux_banner);	// linux_banner是一个静态字符串,含有内核版本信息和编译内核的主机信息
+	setup_arch(&command_line);	// 见下
+	setup_per_cpu_areas();	//分配一段连续的内存空间，存放NR_CPUS份.data.percpu段中的数据。全局数组__per_cpu_offset[NR_CPUS]记录每个CPU的数据相对于__per_cpu_start的偏移。
 
 	/*
 	 * Mark the boot cpu "online" so that it can call console drivers in
 	 * printk() and can access its per-cpu storage.
 	 */
-	smp_prepare_boot_cpu();
+	smp_prepare_boot_cpu();		//在全局变量cpu_online_map和cpu_callout_map上把当前cpu(0)置位。表示cpu0已经上线。
 
 	/*
 	 * Set up the scheduler prior starting any interrupts (such as the
@@ -103,11 +102,11 @@ void __init setup_arch(char **cmdline_p)
 {
 	unsigned long max_low_pfn;
 
-	//在checkCPUtype@arch/i386kernel/head.S中，好像把部分CPU的信息写到了new_cpu_data中,这里只是给boot_cpu_data赋值。
+	//在checkCPUtype@arch/i386kernel/head.S中，把部分CPU的信息写到了new_cpu_data中,这里只是给boot_cpu_data赋值。
 	//这两个变量是cpuinfo_x86类型的，描述cpu的family,vendor,cpuid_level,capabilities,cache等属性。
 	memcpy(&boot_cpu_data, &new_cpu_data, sizeof(new_cpu_data));
 	pre_setup_arch_hook();
-	early_cpu_init();		//利用cpuid指令获取更多cpu的信息赋值给全局变量boot_cpu_data。
+	early_cpu_init();		//利用cpuid指令获取更多cpu的信息赋值给全局变量boot_cpu_data。可以得到x86_cache_alignment
 
 #ifdef CONFIG_EFI
 	if ((LOADER_TYPE == 0x50) && EFI_SYSTAB)
@@ -139,12 +138,12 @@ void __init setup_arch(char **cmdline_p)
 		efi_init();
 	else {
 		printk(KERN_INFO "BIOS-provided physical RAM map:\n");
+		//machine_specific_memory_setup整理e820map，并且保存到新的全局变量`e820`中，返回值是探测物理内存的方式，是一字符串"BIOS-e820"。
+		//print_memory_map据此打印出e820探测的物理内存布局。
 		print_memory_map(machine_specific_memory_setup());
 	}
-	//machine_specific_memory_setup整理e820map，并且保存到新的全局变量`e820`中，返回值是探测物理内存的方式，是一字符串"BIOS-e820"。
-	//print_memory_map据此打印出e820探测的物理内存布局。
 
-	copy_edd();
+	copy_edd();		//没有配置CONFIG_EDD时为空
 
 	if (!MOUNT_ROOT_RDONLY)
 		root_mountflags &= ~MS_RDONLY;
@@ -153,35 +152,28 @@ void __init setup_arch(char **cmdline_p)
 	init_mm.end_data = (unsigned long) _edata;
 	init_mm.brk = init_pg_tables_end + PAGE_OFFSET;
 
-	code_resource.start = virt_to_phys(_text);
+	code_resource.start = virt_to_phys(_text);		//resources管理？(#L4)
 	code_resource.end = virt_to_phys(_etext)-1;
 	data_resource.start = virt_to_phys(_etext);
 	data_resource.end = virt_to_phys(_edata)-1;
 
-	parse_cmdline_early(cmdline_p);		//处理saved_command_line.(#L4)
+	parse_cmdline_early(cmdline_p);		//处理一部分saved_command_line.不能处理的存放到command_line中,command_line的地址存放到*cmdline_p(见cmdline.md #L4)
 
-	max_low_pfn = setup_memory();		//见下
+	//初始化bootmem分配器，并将有意义的区域保留，比如：内核代码数据所占空间、BIOS空间、ACPI配置、如果有initrd那么initrd占用的内存也要保留（内存范围在boot_params中有记录）。
+	max_low_pfn = setup_memory();		
 
-	/*
-	 * NOTE: before this point _nobody_ is allowed to allocate
-	 * any memory using the bootmem allocator.  Although the
-	 * alloctor is now initialised only the first 8Mb of the kernel
-	 * virtual address space has been mapped.  All allocations before
-	 * paging_init() has completed must use the alloc_bootmem_low_pages()
-	 * variant (which allocates DMA'able memory) and care must be taken
-	 * not to exceed the 8Mb limit.
-	 */
+	// 注意：在paging_init之前，只建立了内核数据的页表映射，在实际例子中映射了8MB的空间，页表、bitmap等都不超过这个范围。使用bootmem分配内存时，要用alloc_bootmem_low_pages
+	// 它从0地址开始搜索（其他分配函数从DMA区之后），这里分配的内存才有页表映射，超过8MB是不能访问的。
 
 #ifdef CONFIG_SMP
 	smp_alloc_memory(); /* AP processor realmode stacks in low memory*/
 #endif
 	paging_init();
 
-	/*
-	 * NOTE: at this point the bootmem allocator is fully available.
-	 */
+	//至此，bootmem分配器完全可用。
 
 #ifdef CONFIG_EARLY_PRINTK
+	//如果命令行中定义了earlyprintk，那么配置earlyconsole (#L5)
 	{
 		char *s = strstr(*cmdline_p, "earlyprintk=");
 		if (s) {
@@ -277,10 +269,6 @@ static unsigned long __init setup_memory(void)
 {
 	unsigned long bootmap_size, start_pfn, max_low_pfn;
 
-	/*
-	 * partially used pages are not usable - thus
-	 * we are rounding upwards:
-	 */
 	start_pfn = PFN_UP(init_pg_tables_end);		//start_pfn是init_pg_tables_end之后的pfn，该变量在head.S中建立页映射的时候赋过值。
 
 	find_max_pfn();		//根据e820探测的内存，找到最大的物理页帧编号，赋值给全局变量max_pfn。
@@ -289,25 +277,24 @@ static unsigned long __init setup_memory(void)
 
 	printk(KERN_NOTICE "%ldMB LOWMEM available.\n",
 			pages_to_mb(max_low_pfn));
-	/*
-	 * Initialize the boot-time allocator (with low memory only):
-	 */
-	// 初始化bootmem内存分配器，使用bitmap的方式表示每个物理page的状态，初始时全部设为reserved。bitmap存放在start_pfn开始的位置，
+	// 初始化bootmem内存分配器，只管理低地址内存，使用bitmap的方式表示每个物理page的状态，初始时全部设为reserved。bitmap存放在start_pfn开始的位置，
 	// 根据max_low_pfn的大小建立bitmap（这里使用的平坦内存模型，认为内存从0开始，也暂不考虑内存hole），bitmap所占空间的大小就是bootmap_size。
+	// 在max_low_pfn最大的情况下，bitmap要管理896MB内存，bootmap_size就是28KB。注意此时只建立了内核代码的页表映射（实际例子中内核代码占用5M左右的空间，head.S中映射了8M，用了两张页表），bitmap存放在init_pg_tables_end后面，会不会超出映射范围？(#L3)
 	bootmap_size = init_bootmem(start_pfn, max_low_pfn);
 
 	// 根据e820中的内存表，把类型为RAM的物理页在bootmem中设置为可用。如果实际物理内存大于896M的话，就会受max_low_pfn的限制。
 	register_bootmem_low_pages(max_low_pfn);
 
+	// reserve_bootmem用来把物理内存设置为保留的（不可用的或使用过的）
 	/*
 	 * Reserve the bootmem bitmap itself as well. We do this in two
 	 * steps (first step was init_bootmem()) because this catches
 	 * the (very unlikely) case of us accidentally initializing the
 	 * bootmem allocator with an invalid RAM area.
 	 */
-	// reserve_bootmem用来把物理内存设置为保留的（不可用的或使用过的）
+	//这里的HIGH_MEMORY是1M，大内核存放在高地址内存。保留内核数据代码段和boot页表、bootmem的bitmap。
 	reserve_bootmem(HIGH_MEMORY, (PFN_PHYS(start_pfn) +
-			 bootmap_size + PAGE_SIZE-1) - (HIGH_MEMORY));	//这里的HIGH_MEMORY是1M，大内核存放在高地址内存。保留内核数据代码段和boot页表、bootmem的bitmap。
+			 bootmap_size + PAGE_SIZE-1) - (HIGH_MEMORY));	
 
 	/*
 	 * reserve physical page 0 - it's a special BIOS page on many boxes,
@@ -321,6 +308,7 @@ static unsigned long __init setup_memory(void)
     /* could be an AMD 768MPX chipset. Reserve a page  before VGA to prevent
        PCI prefetch into it (errata #56). Usually the page is reserved anyways,
        unless you have no PS/2 mouse plugged in. */
+	//AMD垃圾!!!
 	if (boot_cpu_data.x86_vendor == X86_VENDOR_AMD &&
 	    boot_cpu_data.x86 == 6)
 	     reserve_bootmem(0xa0000 - 4096, 4096);
@@ -346,12 +334,52 @@ static unsigned long __init setup_memory(void)
 	find_smp_config();
 #endif
 
+#ifdef CONFIG_BLK_DEV_INITRD
+	if (LOADER_TYPE && INITRD_START) {
+		if (INITRD_START + INITRD_SIZE <= (max_low_pfn << PAGE_SHIFT)) {
+			reserve_bootmem(INITRD_START, INITRD_SIZE);
+			initrd_start =
+				INITRD_START ? INITRD_START + PAGE_OFFSET : 0;
+			initrd_end = initrd_start+INITRD_SIZE;
+		}
+		else {
+			printk(KERN_ERR "initrd extends beyond end of memory "
+			    "(0x%08lx > 0x%08lx)\ndisabling initrd\n",
+			    INITRD_START + INITRD_SIZE,
+			    max_low_pfn << PAGE_SHIFT);
+			initrd_start = 0;
+		}
+	}
+#endif
 	return max_low_pfn;
 }
 ```
 bootmem分配器的内存分配释放机制参考bootmem.md。
 
-#### acpi_reserve_bootmem(#L5)
+#### acpi_reserve_bootmem(#L5 acpi_wakeup_address这块内存干啥用？)
+```
+/**
+ * acpi_reserve_bootmem - do _very_ early ACPI initialisation
+ *
+ * We allocate a page from the first 1MB of memory for the wakeup
+ * routine for when we come back from a sleep state. The
+ * runtime allocator allows specification of <16MB pages, but not
+ * <1MB pages.
+ */
+void __init acpi_reserve_bootmem(void)
+{
+	// wakeup_start和wakeup_end是在arch/i386/kernel/acpi/wakeup.S中定义的wakeup代码的起始和结束位置。
+	if ((&wakeup_end - &wakeup_start) > PAGE_SIZE) {
+		printk(KERN_ERR "ACPI: Wakeup code way too big, S3 disabled.\n");
+		return;
+	}
+
+	acpi_wakeup_address = (unsigned long)alloc_bootmem_low(PAGE_SIZE);
+	if (!acpi_wakeup_address)
+		printk(KERN_ERR "ACPI: Cannot allocate lowmem, S3 disabled.\n");
+}
+```
+
 #### find_smp_config
 该函数在0~1K,639K~640K,0xF0000~0x100000这几个范围内查找下面这样一个16B的数据结构。找到之后起始地址赋值给全局变量mpf_found，并将全局变量smp_found_config置1。
 mpf_physptr指向配置表的起始地址，
@@ -374,7 +402,20 @@ struct intel_mp_floating
 ```
 
 
-### smp_alloc_memory() (#L3)
+### smp_alloc_memory() (#L3 trampoline_base这块内存干啥用的)
+```
+void __init smp_alloc_memory(void)
+{
+	trampoline_base = (void *) alloc_bootmem_low_pages(PAGE_SIZE);
+
+	// Has to be in very low memory so we can execute real-mode AP code.
+	if (__pa(trampoline_base) >= 0x9F000)
+		BUG();
+	// Make the SMP trampoline executable:
+	trampoline_exec = set_kernel_exec((unsigned long)trampoline_base, 1);
+}
+```
+
 
 ### paging_init():
 ```
@@ -387,11 +428,12 @@ void __init paging_init(void)
 
 	__flush_tlb_all();
 
-	kmap_init();
+	kmap_init();		//没有CONFIG_HIGHMEM时为空
 	zone_sizes_init();
 }
 ```
 #### pagetable_init
+页表初始化：建立低端内存的一致线性映射，创建固定虚拟地址映射的页表等。
 ```
 //PAE部分已删除
 static void __init pagetable_init (void)
@@ -399,7 +441,11 @@ static void __init pagetable_init (void)
 	unsigned long vaddr;
 	pgd_t *pgd_base = swapper_pg_dir;
 
-	/* Enable PSE if available */
+//32bit的保护模式使用两级页映射，CR3指向4KB的页目录基址，页目录表项指向4KB的页表基址，页表项指向4KB的物理页基址。如果在CR4中开启PSE，而且页目录项中的bit7标志为1(Page Size)，页目录表项中的物理地址不是指向一个4KB的页表，而是一个4MB的物理页。页目录项中没有置位PS的依旧指向页表。
+
+If newer PSE-36 capability is available on the CPU, as checked using the CPUID instruction, then 4 more bits, in addition to normal 10 bits, are used inside a page-directory entry pointing to a large page. This allows a large page to be located in 36-bit address space.
+
+//如果开启PAE，PSE特性自动开启（不管CR4中的PSE位），大页大小不是4MB而是2MB，
 	if (cpu_has_pse) {
 		set_in_cr4(X86_CR4_PSE);
 	}
@@ -413,24 +459,72 @@ static void __init pagetable_init (void)
 
 	//给max_low_pfn以内的内存建立线性映射页表，之前只是在boot阶段映射了内核程序数据所占的物理内存（小于8M，用了2张页表），现在需要用bootmem分配器分配空间作为页表，完成所有低地址空间的线性映射。
 	kernel_physical_mapping_init(pgd_base);
-	remap_numa_kva();					// 没有配置DISCONTIGMEM时为空
+	remap_numa_kva();					// 没有配置DISCONTIGMEM时为空 (#L6)
 
-	/*
-	 * Fixed mappings, only the page table structure has to be
-	 * created - mappings will be set by set_fixmap():
-	 */
-	vaddr = __fix_to_virt(__end_of_fixed_addresses - 1) & PMD_MASK;		//关于fixmap，可以再加一篇文档(#L6)。 这里只是给这些固定的虚拟地址分配了页表，但是页表里没有填具体的物理页帧的位置。当需要用这个地址访问物理内存时，使用set_fixmap建立映射，就可以用虚拟地址访存了。
+	//关于fixmap，可以再加一篇文档(#L6)。 
+	//这里只是给这些固定的虚拟地址分配了页表，但是页表里没有填具体的物理页帧的位置。当需要用这个地址访问物理内存时，使用set_fixmap建立映射，就可以用虚拟地址访存了。
+	vaddr = __fix_to_virt(__end_of_fixed_addresses - 1) & PMD_MASK;		
 	page_table_range_init(vaddr, 0, pgd_base);
 
-	permanent_kmaps_init(pgd_base);		// 没有配置HIGHMEM时为空
+	permanent_kmaps_init(pgd_base);		// 没有配置HIGHMEM时为空(#L6)
 
 }
 ```
+##### kernel_physical_mapping_init(pgd_base):
+```
+// 把0~max_low_pfn个物理页映射到PAGE_OFFSET开始的线性地址空间，需要页表时使用bootmem_low分配。如果支持PSE，那么就不需要页表了。
+static void __init kernel_physical_mapping_init(pgd_t *pgd_base)
+{
+	unsigned long pfn;
+	pgd_t *pgd;
+	pmd_t *pmd;
+	pte_t *pte;
+	int pgd_idx, pmd_idx, pte_ofs;
 
+	pgd_idx = pgd_index(PAGE_OFFSET); 	//pgd_index从虚拟地址中获取页目录表项偏移。
+	pgd = pgd_base + pgd_idx;
+	pfn = 0;
+
+	//从PAGE_OFFSET开始的虚拟内存和从0开始的物理内存建立一致线性映射
+	for (; pgd_idx < PTRS_PER_PGD; pgd++, pgd_idx++) {
+		pmd = one_md_table_init(pgd);	//从页目录项指针获取pmd指针。对于二级页表，它们相等。
+		if (pfn >= max_low_pfn)
+			continue;
+		//对于二级页表而言，PTRS_PER_PMD为1。
+		for (pmd_idx = 0; pmd_idx < PTRS_PER_PMD && pfn < max_low_pfn; pmd++, pmd_idx++) {
+			unsigned int address = pfn * PAGE_SIZE + PAGE_OFFSET;
+
+			// 如果CPU支持PSE，映射大页，pmd表项中会有PSE标志。而早期在head.S中映射的两张页表就不再使用了。
+			if (cpu_has_pse) {
+				unsigned int address2 = (pfn + PTRS_PER_PTE - 1) * PAGE_SIZE + PAGE_OFFSET + PAGE_SIZE-1;
+
+				if (is_kernel_text(address) || is_kernel_text(address2))
+					set_pmd(pmd, pfn_pmd(pfn, PAGE_KERNEL_LARGE_EXEC));
+				else
+					set_pmd(pmd, pfn_pmd(pfn, PAGE_KERNEL_LARGE));
+				pfn += PTRS_PER_PTE;
+			} else {
+				// 获取pmd所指页表的第零项指针（即页表起始地址）。如果*pmd为空（还没有建立页表映射。别忘了早期的前8MB的两张页表是分配空间过的），
+				// 那么从bootmem_low分配一个PAGE用作页表，并返回其地址。
+				pte = one_page_table_init(pmd);
+
+				// 为页表中的每一项写入物理页的地址和相应的标志位。
+				for (pte_ofs = 0; pte_ofs < PTRS_PER_PTE && pfn < max_low_pfn; pte++, pfn++, pte_ofs++) {
+						if (is_kernel_text(address))
+							set_pte(pte, pfn_pte(pfn, PAGE_KERNEL_EXEC));
+						else
+							set_pte(pte, pfn_pte(pfn, PAGE_KERNEL));
+				}
+			}
+		}
+	}
+}
+```
 
 #### zone_sizes_init():
 ```
 //每个node包含有3个zone，分别是DMA、NORMAL和HIGHMEM。DMA传输所用的物理地址不超过16M，因为DMA总线只有24位。NORMAL指的是16M之后到max_low的内存区域，HIGHMEM是高于max_low_pfn的内存。
+#ifndef CONFIG_DISCONTIGMEM
 void __init zone_sizes_init(void)
 {
 	unsigned long zones_size[MAX_NR_ZONES] = {0, 0, 0};		//zone_size数组用来描述每个zone中内存的pfn大小。
@@ -481,6 +575,7 @@ void __init free_area_init_node(int nid, struct pglist_data *pgdat,
 ```
 ###### node_alloc_mem_map:
 ```
+// 分配空间给struct page数组，用来管理该node下的物理page。
 void __init node_alloc_mem_map(struct pglist_data *pgdat)
 {
 	unsigned long size;
@@ -605,7 +700,7 @@ static void __init free_area_init_core(struct pglist_data *pgdat,
 		memmap_init(size, nid, j, zone_start_pfn);	//用来初始化zone对应的page数组的值。
 
 		zone_start_pfn += size;
-		//初始化zone中的free_area结构数组，该结构用于buddy system，数组长度默认为11，每个free_area元素描述一个2的n次方大小为单位的块的内存池，所以该结构有个free_list成员。
+		//初始化zone中的free_area结构数组，该结构用于buddy system，数组长度默认为11，每个free_area元素描述一个2的n次方大小为单位的块的内存池，所以该结构有个struct list_headfree_list成员。
 		//还有一个map成员，是bitmap映射表的起始地址，该bitmap展示该zone中的page按照该种大小划分块时的使用情况。这里只是从bootmem中分配了内存块，并赋值给free_area[x].map。
 		zone_init_free_lists(pgdat, zone, zone->spanned_pages); 
 	}
@@ -650,12 +745,6 @@ static void __init register_memory(unsigned long max_low_pfn)
 		pci_mem_start = low_mem_size;
 }
 ```
-
-## setup_per_cpu_areas@init/main.c
-分配一段连续的内存空间，存放NR_CPUS份.data.percpu段中的数据。全局数组__per_cpu_offset[NR_CPUS]存放每个CPU的数据相对于__per_cpu_start的偏移。
-
-## smp_prepare_boot_cpu@init/main.c
-在cpu_online_map和cpu_callout_map上把当前cpu(0)置位。表示cpu0已经上线。
 
 ## sched_init();
 /*
