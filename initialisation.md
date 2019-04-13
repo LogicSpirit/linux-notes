@@ -1,6 +1,5 @@
 # start_kernel执行过程
-
-```
+```c
 asmlinkage void __init start_kernel(void)
 {
 	char * command_line;		//这个指针用来记录啥时候的cmdline？
@@ -97,7 +96,7 @@ asmlinkage void __init start_kernel(void)
 ```
 
 ## setup_arch
-```
+```c
 void __init setup_arch(char **cmdline_p)
 {
 	unsigned long max_low_pfn;
@@ -185,7 +184,6 @@ void __init setup_arch(char **cmdline_p)
 	}
 #endif
 
-
 	dmi_scan_machine();
 
 #ifdef CONFIG_X86_GENERICARCH
@@ -220,7 +218,7 @@ void __init setup_arch(char **cmdline_p)
 
 ### machine_specific_memory_setup
 整理e820map，并且保存到新的全局变量`e820`中。BIOS中断得到的e820map可能不同的类型有重叠的区域，重叠时取最大的类型号。类型如下。
-```
+```c
 #define E820_RAM		1
 #define E820_RESERVED	2
 #define E820_ACPI		3 /* usable as RAM once ACPI tables have been read */
@@ -264,7 +262,7 @@ void __init setup_arch(char **cmdline_p)
 ```
 
 ### setup_memory:
-```
+```c
 static unsigned long __init setup_memory(void)
 {
 	unsigned long bootmap_size, start_pfn, max_low_pfn;
@@ -357,7 +355,7 @@ static unsigned long __init setup_memory(void)
 bootmem分配器的内存分配释放机制参考bootmem.md。
 
 #### acpi_reserve_bootmem(#L5 acpi_wakeup_address这块内存干啥用？)
-```
+```c
 /**
  * acpi_reserve_bootmem - do _very_ early ACPI initialisation
  *
@@ -383,7 +381,7 @@ void __init acpi_reserve_bootmem(void)
 #### find_smp_config
 该函数在0~1K,639K~640K,0xF0000~0x100000这几个范围内查找下面这样一个16B的数据结构。找到之后起始地址赋值给全局变量mpf_found，并将全局变量smp_found_config置1。
 mpf_physptr指向配置表的起始地址，
-```
+```c
 #define SMP_MAGIC_IDENT(('_'<<24)|('P'<<16)|('M'<<8)|'_')
 
 struct intel_mp_floating
@@ -401,9 +399,9 @@ struct intel_mp_floating
 };
 ```
 
-
 ### smp_alloc_memory() (#L3 trampoline_base这块内存干啥用的)
-```
+
+```c
 void __init smp_alloc_memory(void)
 {
 	trampoline_base = (void *) alloc_bootmem_low_pages(PAGE_SIZE);
@@ -416,9 +414,9 @@ void __init smp_alloc_memory(void)
 }
 ```
 
-
 ### paging_init():
-```
+
+```c
 // PAE部分已删除
 void __init paging_init(void)
 {
@@ -434,7 +432,7 @@ void __init paging_init(void)
 ```
 #### pagetable_init
 页表初始化：建立低端内存的一致线性映射，创建固定虚拟地址映射的页表等。
-```
+```c
 //PAE部分已删除
 static void __init pagetable_init (void)
 {
@@ -471,7 +469,7 @@ If newer PSE-36 capability is available on the CPU, as checked using the CPUID i
 }
 ```
 ##### kernel_physical_mapping_init(pgd_base):
-```
+```c
 // 把0~max_low_pfn个物理页映射到PAGE_OFFSET开始的线性地址空间，需要页表时使用bootmem_low分配。如果支持PSE，那么就不需要页表了。
 static void __init kernel_physical_mapping_init(pgd_t *pgd_base)
 {
@@ -522,7 +520,7 @@ static void __init kernel_physical_mapping_init(pgd_t *pgd_base)
 ```
 
 #### zone_sizes_init():
-```
+```c
 //每个node包含有3个zone，分别是DMA、NORMAL和HIGHMEM。DMA传输所用的物理地址不超过16M，因为DMA总线只有24位。NORMAL指的是16M之后到max_low的内存区域，HIGHMEM是高于max_low_pfn的内存。
 #ifndef CONFIG_DISCONTIGMEM
 void __init zone_sizes_init(void)
@@ -547,7 +545,7 @@ void __init zone_sizes_init(void)
 }
 ```
 ##### free_area_init && free_area_init_node
-```
+```c
 //对于平坦地址模型（认为物理地址连续，没有坑洞），只有一个node，其描述结构就是全局变量contig_page_data，nid为0，起始地址为0。
 void __init free_area_init(unsigned long *zones_size)
 {
@@ -574,7 +572,7 @@ void __init free_area_init_node(int nid, struct pglist_data *pgdat,
 }
 ```
 ###### node_alloc_mem_map:
-```
+```c
 // 分配空间给struct page数组，用来管理该node下的物理page。
 void __init node_alloc_mem_map(struct pglist_data *pgdat)
 {
@@ -589,7 +587,7 @@ void __init node_alloc_mem_map(struct pglist_data *pgdat)
 ```
 
 ###### free_area_init_core@page_alloc.c: (需要补充#L4)
-```
+```c
 /*
  * Set up the zone data structures:
  *   - mark all pages reserved
@@ -715,13 +713,13 @@ static void __init free_area_init_core(struct pglist_data *pgdat,
 ### register_memory(max_low_pfn):
 申请resources，把内核内存中代码数据挂在iomem_resource下，把io端口挂在ioport_resource下。
 在setup.c中有：
-```
+```c
 code_resource.start = virt_to_phys(_text);
 code_resource.end = virt_to_phys(_etext)-1;
 data_resource.start = virt_to_phys(_etext);
 data_resource.end = virt_to_phys(_edata)-1;
 ```
-```
+```c
 static void __init register_memory(unsigned long max_low_pfn)
 {
 	unsigned long low_mem_size;
@@ -747,17 +745,19 @@ static void __init register_memory(unsigned long max_low_pfn)
 ```
 
 ## sched_init();
+初始化per_cpu的runqueue，初始化当前cpu上的idle线程数据结构。(#L4)
+```c
 /*
  * Set up the scheduler prior starting any interrupts (such as the
  * timer interrupt). Full topology setup happens at smp_init()
  * time - but meanwhile we still have a functioning scheduler.
  */
-初始化per_cpu的runqueue，初始化当前cpu上的idle线程数据结构。(#L4)
+```
 
-## build_all_zonelists && build_zonelists:
+## build_all_zonelists && build_zonelists
 什么是zonelist，干嘛用的(#L5)？目前来看是把所有的NORMAL串在一起，当前node里的内存用完去下一个Node找同类型的；其他类型同理。
 就代码来看：
-```
+```c
 void __init build_all_zonelists(void)
 {
 	int i;
@@ -809,7 +809,7 @@ static void __init build_zonelists(pg_data_t *pgdat)
 ## sort_main_extable:
 	sort_extable(__start___ex_table, __stop___ex_table);
 其中__start___ex_table和__stop___ex_table是由链接脚本定义的__ex_table段的起始和结束虚拟地址。该部分存放exception_table_entry数组:（怎么产生的#L5)
-```
+```c
 /*
  * The exception table consists of pairs of addresses: the first is the
  * address of an instruction that is allowed to fault, and the second is
