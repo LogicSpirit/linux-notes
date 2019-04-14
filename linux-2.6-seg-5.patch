@@ -1,6 +1,7 @@
---- linux/arch/i386/kernel/process.c.seg	2005-03-27 13:07:14.000000000 -0800
-+++ linux/arch/i386/kernel/process.c	2005-03-28 10:28:47.000000000 -0800
-@@ -597,8 +597,8 @@ struct task_struct fastcall * __switch_t
+diff -ru linux-2.6.10/arch/i386/kernel/process.c linux-2.6.10-fixed/arch/i386/kernel/process.c
+--- linux-2.6.10/arch/i386/kernel/process.c	2004-12-25 05:33:47.000000000 +0800
++++ linux-2.6.10-fixed/arch/i386/kernel/process.c	2019-04-14 10:49:40.596180956 +0800
+@@ -580,8 +580,8 @@
  	 * Save away %fs and %gs. No need to save %es and %ds, as
  	 * those are always kernel segments while inside the kernel.
  	 */
@@ -11,9 +12,10 @@
  
  	/*
  	 * Restore %fs and %gs if needed.
---- linux/arch/i386/kernel/vm86.c.seg	2005-03-27 13:07:14.000000000 -0800
-+++ linux/arch/i386/kernel/vm86.c	2005-03-28 10:28:47.000000000 -0800
-@@ -294,8 +294,8 @@ static void do_sys_vm86(struct kernel_vm
+diff -ru linux-2.6.10/arch/i386/kernel/vm86.c linux-2.6.10-fixed/arch/i386/kernel/vm86.c
+--- linux-2.6.10/arch/i386/kernel/vm86.c	2004-12-25 05:33:59.000000000 +0800
++++ linux-2.6.10-fixed/arch/i386/kernel/vm86.c	2019-04-14 10:50:10.788109396 +0800
+@@ -300,8 +300,8 @@
   */
  	info->regs32->eax = 0;
  	tsk->thread.saved_esp0 = tsk->thread.esp0;
@@ -24,9 +26,10 @@
  
  	tss = &per_cpu(init_tss, get_cpu());
  	tsk->thread.esp0 = (unsigned long) &info->VM86_TSS_ESP0;
---- linux/arch/x86_64/kernel/process.c.seg	2005-03-27 13:07:49.000000000 -0800
-+++ linux/arch/x86_64/kernel/process.c	2005-03-28 11:11:04.206766410 -0800
-@@ -391,10 +391,10 @@ int copy_thread(int nr, unsigned long cl
+diff -ru linux-2.6.10/arch/x86_64/kernel/process.c linux-2.6.10-fixed/arch/x86_64/kernel/process.c
+--- linux-2.6.10/arch/x86_64/kernel/process.c	2004-12-25 05:34:58.000000000 +0800
++++ linux-2.6.10-fixed/arch/x86_64/kernel/process.c	2019-04-14 10:51:42.748177439 +0800
+@@ -373,10 +373,10 @@
  	p->thread.fs = me->thread.fs;
  	p->thread.gs = me->thread.gs;
  
@@ -41,7 +44,7 @@
  
  	if (unlikely(me->thread.io_bitmap_ptr != NULL)) { 
  		p->thread.io_bitmap_ptr = kmalloc(IO_BITMAP_BYTES, GFP_KERNEL);
-@@ -457,11 +457,11 @@ struct task_struct *__switch_to(struct t
+@@ -439,11 +439,11 @@
  	 * Switch DS and ES.
  	 * This won't pick up thread selector changes, but I guess that is ok.
  	 */
@@ -55,27 +58,39 @@
  	if (unlikely(next->ds | prev->ds))
  		loadsegment(ds, next->ds);
  
-@@ -472,7 +472,7 @@ struct task_struct *__switch_to(struct t
+@@ -454,7 +454,7 @@
  	 */
  	{ 
  		unsigned fsindex;
 -		asm volatile("movl %%fs,%0" : "=g" (fsindex)); 
-+		asm volatile("movl %%fs,%0" : "=r" (fsindex)); 
++		asm volatile("mov %%fs,%0" : "=g" (fsindex)); 
  		/* segment register != 0 always requires a reload. 
  		   also reload when it has changed. 
  		   when prev process used 64bit base always reload
-@@ -493,7 +493,7 @@ struct task_struct *__switch_to(struct t
+@@ -475,7 +475,7 @@
  	}
  	{ 
  		unsigned gsindex;
 -		asm volatile("movl %%gs,%0" : "=g" (gsindex)); 
-+		asm volatile("movl %%gs,%0" : "=r" (gsindex)); 
++		asm volatile("mov %%gs,%0" : "=g" (gsindex)); 
  		if (unlikely(gsindex | next->gsindex | prev->gs)) {
  			load_gs_index(next->gsindex);
  			if (gsindex)
---- linux/include/asm-i386/system.h.seg	2005-03-27 13:09:12.000000000 -0800
-+++ linux/include/asm-i386/system.h	2005-03-28 10:28:47.000000000 -0800
-@@ -81,7 +81,7 @@ static inline unsigned long _get_base(ch
+diff -ru linux-2.6.10/drivers/media/dvb/b2c2/Makefile linux-2.6.10-fixed/drivers/media/dvb/b2c2/Makefile
+--- linux-2.6.10/drivers/media/dvb/b2c2/Makefile	2004-12-25 05:34:00.000000000 +0800
++++ linux-2.6.10-fixed/drivers/media/dvb/b2c2/Makefile	2019-04-14 10:47:42.325074833 +0800
+@@ -1,6 +1,6 @@
+ obj-b2c2-usb = b2c2-usb-core.o b2c2-common.o
+ 
+ obj-$(CONFIG_DVB_B2C2_SKYSTAR) += skystar2.o
+-obj-$(CONFIG_DVB_B2C2_USB) + = b2c2-usb.o
++obj-$(CONFIG_DVB_B2C2_USB) += b2c2-usb.o
+ 
+ EXTRA_CFLAGS = -Idrivers/media/dvb/dvb-core/ -Idrivers/media/dvb/frontends/
+diff -ru linux-2.6.10/include/asm-i386/system.h linux-2.6.10-fixed/include/asm-i386/system.h
+--- linux-2.6.10/include/asm-i386/system.h	2004-12-25 05:33:48.000000000 +0800
++++ linux-2.6.10-fixed/include/asm-i386/system.h	2019-04-14 10:52:52.860455205 +0800
+@@ -81,7 +81,7 @@
  #define loadsegment(seg,value)			\
  	asm volatile("\n"			\
  		"1:\t"				\
@@ -84,7 +99,7 @@
  		"2:\n"				\
  		".section .fixup,\"ax\"\n"	\
  		"3:\t"				\
-@@ -93,13 +93,13 @@ static inline unsigned long _get_base(ch
+@@ -93,13 +93,13 @@
  		".align 4\n\t"			\
  		".long 1b,3b\n"			\
  		".previous"			\

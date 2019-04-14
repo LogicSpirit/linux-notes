@@ -1,30 +1,30 @@
 ### 1. 安装ubuntu-16.04-i386虚拟机
 ```sh
 # run as root
-apt-get install qemu-system-x86	# 安装qemu-system-x86；
-apt-get install libncurses5-dev # make menuconfig会用到
+apt-get install -y qemu-system-x86	# 安装qemu-system-x86；
+apt-get install -y libncurses5-dev # make menuconfig会用到
 
 echo "deb     http://old-releases.ubuntu.com/ubuntu/ hardy universe" >> /etc/apt/sources.list	#使用0804的源
 apt-get update
 
-apt-get install gcc-3.4	#安装配置gcc-3.4（gcc-3.3应该也行）
+apt-get install -y gcc-3.4	#安装配置gcc-3.4（gcc-3.3应该也行）
 ln -svf gcc-3.4 /usr/bin/gcc
 
 # 先是找不到头文件，这是因为gcc自动的头文件搜索目录是在编译gcc时配置的，用gcc-3.3 -xc -E -v -可以看到。
 # 添加环境变量，让gcc能找到头文件和库：
-cat >/etc/profile << "EOF"
-C_INCLUDE_PATH=$C_INCLUDE_PATH:/usr/include/i386-linux-gnu
-LIBRARY_PATH=$LIBRARY_PATH:/usr/lib/i386-linux-gnu
+cat >>/etc/bash.bashrc << "EOF"
+export C_INCLUDE_PATH=/usr/include/i386-linux-gnu
+export LIBRARY_PATH=/usr/lib/i386-linux-gnu
 EOF
-source /etc/profile
+source /etc/bash.bashrc
 
 # 然后还找不到libgcc_s.so，这个文件是有的，在/lib/i386-linux-gnu/libgcc_s.so.1，只不过原来的链接指错了。
-ln -svf /lib/i386-linux-gnu/libgcc_s.so.1 /usr/lib/gcc-lib/i486-linux-gnu/3.3.6/libgcc_s.so
+#ln -svf /lib/i386-linux-gnu/libgcc_s.so.1 /usr/lib/gcc-lib/i486-linux-gnu/3.3.6/libgcc_s.so
 ln -svf /lib/i386-linux-gnu/libgcc_s.so.1 /usr/lib/gcc/i486-linux-gnu/3.4.6/libgcc_s.so
 
 # 用gcc-3.4编译hello world测试能否正常工作
 cat >hello.c <<"EOF"
-#include <sdtio.h>
+#include <stdio.h>
 int main(){
 	printf("hello\n");
 	return 0;
@@ -66,6 +66,8 @@ make[1]: *** [arch/i386/kernel/process.o] B d 1
 这是因为binutils>2.15，跟段寄存相关的mov指令不能加后缀，否则as过不了（不是gcc的问题）。所以按照linux-2.6-seg-5.patch修改一下代码就OK了。
 
 #### busybox-1.0.0
+编译时需要libc，但是1604的libc跟2.6.10并不一致，可能导致问题？运行时发现不能正常使用，难道要另外装低版本libc来编译busybox？(#L3)
+暂时先用之前在0504中编译的busybox，目前还不需要调试用户程序。
 ```sh
 make defconfig
 make menuconfig		# 在build options中选择编译成静态链接程序；<C-BS>可以删除字符串。
@@ -91,8 +93,6 @@ sudo umount /path/to/rootfs （执行时不要在该目录，否则它会busy）
 ```
 这样rootfs.img就已经是一个有根目录的硬盘镜像了。
 
-编译时也需要libc，但是1604的libc跟2.6.10并不一致，可能导致问题？运行时发现不能正常使用，难道要另外装低版本libc来编译busybox？(#L3)
-暂时先用之前在0504中编译的busybox，目前还不需要调试用户程序。
 
 ### 3. 开搞：
 ```
