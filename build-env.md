@@ -1,100 +1,27 @@
-### 1. 安装ubuntu-16.04-i386虚拟机
+### 1. 安装ubuntu-16.04虚拟机
+该虚拟机总领全局，用来建立各个项目的workspace，其中包含多个版本的linux和其他GUN软件的源码以及调试环境。但是很多软件的编译环境相当苛刻，难以在此虚拟机上完成编译，所以把特定项目的源码共享给相应的辅助虚拟机完成编译。
+调试学习老版本linux的时候，可以找到相当老的RedHat Linux，其内核有1.x,2.x的等等，用来做编译环境。这些编译虚拟机通过nfs访问主虚拟机的项目目录。
+
+需要的配置：
+- nfs server
+- samba server
+- git
+- vim
+- qemu
+- kpartx
+
 ```sh
-# run as root
-apt-get install -y qemu-system-x86	# 安装qemu-system-x86；
-apt-get install -y libncurses5-dev # make menuconfig会用到
-
-echo "deb     http://old-releases.ubuntu.com/ubuntu/ hardy universe" >> /etc/apt/sources.list	#使用0804的源
-apt-get update
-
-apt-get install -y gcc-3.4	#安装配置gcc-3.4（gcc-3.3应该也行）
-ln -svf gcc-3.4 /usr/bin/gcc
-
-# 先是找不到头文件，这是因为gcc自动的头文件搜索目录是在编译gcc时配置的，用gcc-3.3 -xc -E -v -可以看到。
-# 添加环境变量，让gcc能找到头文件和库：
-cat >>/etc/bash.bashrc << "EOF"
-export C_INCLUDE_PATH=/usr/include/i386-linux-gnu
-export LIBRARY_PATH=/usr/lib/i386-linux-gnu
+apt-get -y install vim qemu kpartx git samba nfs-kernel-server
+cat >> /etc/export << "EOF"
+/home/calvin/workspace	*(rw,sync)
 EOF
-source /etc/bash.bashrc
+# 打开samba的homes共享
+# smbpasswd设置密码
 
-# 然后还找不到libgcc_s.so，这个文件是有的，在/lib/i386-linux-gnu/libgcc_s.so.1，只不过原来的链接指错了。
-#ln -svf /lib/i386-linux-gnu/libgcc_s.so.1 /usr/lib/gcc-lib/i486-linux-gnu/3.3.6/libgcc_s.so
-ln -svf /lib/i386-linux-gnu/libgcc_s.so.1 /usr/lib/gcc/i486-linux-gnu/3.4.6/libgcc_s.so
-
-# 用gcc-3.4编译hello world测试能否正常工作
-cat >hello.c <<"EOF"
-#include <stdio.h>
-int main(){
-	printf("hello\n");
-	return 0;
-}
-EOF
-gcc hello.c -o hello \
-./hello \
-rm hello.c hello
-
-# make mrproper时出现找不到头文件，创建个链接
-ln -svf /usr/include/i386-linux-gnu/bits /usr/include/bits
-
-# 把linux-2.6.10的内核头文件放到好用的位置
-mkdir -pv /usr/src/linux-headers-2.6.10/include
-cp -vR /path/to/linux-2.6.10/include/* /usr/src/linux-headers-2.6.10/include
 ```
 
-### 2. 编译
-
-#### linux-2.6.10
-好像有个Makefile中`+=`写成了`+ =`，Make 4.1报错。
-
-make的时候报错：
-```
-CC arch/i386/kernel/process.o
-{standard input}: Assembler messages:
-{standard input}:861: Error: suffix or operands invalid for `mov'
-{standard input}:862: Error: suffix or operands invalid for `mov'
-{standard input}:1055: Error: suffix or operands invalid for `mov'
-{standard input}:1056: Error: suffix or operands invalid for `mov'
-{standard input}:1122: Error: suffix or operands invalid for `mov'
-{standard input}:1123: Error: suffix or operands invalid for `mov'
-{standard input}:1190: Error: suffix or operands invalid for `mov'
-{standard input}:1191: Error: suffix or operands invalid for `mov'
-{standard input}:1300: Error: suffix or operands invalid for `mov'
-{standard input}:1312: Error: suffix or operands invalid for `mov'
-make[1]: *** [arch/i386/kernel/process.o] B d 1
-```
-这是因为binutils>2.15，跟段寄存相关的mov指令不能加后缀，否则as过不了（不是gcc的问题）。所以按照linux-2.6-seg-5.patch修改一下代码就OK了。
-
-#### busybox-1.0.0
-编译时需要libc，但是1604的libc跟2.6.10并不一致，可能导致问题？运行时发现不能正常使用，难道要另外装低版本libc来编译busybox？(#L3)
-暂时先用之前在0504中编译的busybox，目前还不需要调试用户程序。
-```sh
-make defconfig
-make menuconfig		# 在build options中选择编译成静态链接程序；<C-BS>可以删除字符串。
-make install
-```
-编译时需要内核头文件，在Makefile中添加
-```
-CFLAGS += -I/usr/src/linux-headers-2.6.10/include
-```
-
-##### 把busybox打包成rootfs.img
-```
-dd if=/dev/zero of=rootfs.img bs=1M count=10
-mkfs.ext3 rootfs.img
-mkdir -v rootfs
-sudo mount -t ext3 -o loop rootfs.img rootfs
-sudo cp _install/* -R rootfs
-sudo mkdir -v rootfs/{dev,proc,sys}
-sudo mknod rootfs/dev/console c 5 1
-sudo mknod rootfs/dev/null c 1 3
-# 挂在proc,sys
-sudo umount /path/to/rootfs （执行时不要在该目录，否则它会busy）
-```
-这样rootfs.img就已经是一个有根目录的硬盘镜像了。
-
-
-### 3. 开搞：
+### 2. qemu&gdb 用法
+调试方法对于多数版本都一样。
 ```
 qemu-system-i386 -curses -kernel bzImage -hda rootfs.img -append "root=/dev/hda earlyprintk=vga" -S -s
 ```
@@ -105,7 +32,7 @@ qemu-system-i386 -curses -kernel bzImage -hda rootfs.img -append "root=/dev/hda 
 - `-append` 指定bootloader的命令行参数，这个参数qemu bootloader会传递给内核。
 - `-S -s` 让qemu启动后停下，并连接本地调试器。
 
-**在xshell中只能使用curses模拟vga的方式显示，使用<esc>+[1/2]可以切换显示界面和控制台，在控制台下输入quit可退出qemu。**
+**在xshell中使用curses模拟vga的方式显示，使用<esc>+[1/2]可以切换显示界面和控制台，在控制台下输入quit可退出qemu。**
 
 再开一个终端：
 ```
@@ -119,6 +46,115 @@ cat >.gdbinit << "EOF"
 file vmlinux
 target remote localhost:1234
 EOF
+```
+
+### 3. linux-2.4.0环境
+用RedHat Linux 7.1发行版（不是RedHat Enterprise Linux）。
+光盘的软件包中有sshd,samba,nfsd等。
+##### 安装注意事项：
+1. 创建IDE磁盘，总线选0:0，否则它的编号不是hda，会安装失败。
+2. 需要使用两张disc，切换时别忘了连接上。
+3. 挂载cdrom，rpm -ivh xxx.rpm安装应用，软件包分布在两个disc上。不会自动安装sshd启动配置，需要`ln -sv ../init.d/sshd /etc/rc3.d/S55sshd`
+
+##### 环境配置
+```sh
+mkdir -vp /home/calvin/workspace/linux-2.4.0
+mkdir -vp /home/calvin/workspace/busybox-0.60.3
+mkdir -vp /home/calvin/workspace/grub-0.92
+cat >> /etc/rc.local << "EOF"
+mount 111.0.0.2:/home/calvin/workspace/linux-2.4.0 /home/calvin/workspace/linux-2.4.0
+mount 111.0.0.02:/home/calvin/workspace/busybox-0.60.3 /home/calvin/workspace/busybox-0.60.3
+mount 111.0.0.02:/home/calvin/workspace/grub-0.92 /home/calvin/workspace/grub-0.92
+EOF
+```
+
+##### 编译linux-2.4.0
+```sh
+cd /home/calvin/workspace/linux-2.4.0
+make menuconfig
+make bzImage
+```
+##### 编译busybox-0.60.3
+```sh
+cd /home/calvin/workspace/busybox-0.60.3
+# 这个版本没有menuconfig，要想编译静态连接的程序只能修改Makefile。原理是链接的时候使用--static选项。
+sed -e "s/\(^DOSTATIC =\).*$/\1 true/g" -i Makefile
+make && make install
+```
+
+##### 编译grub-0.92
+linux-2.4.0不能直接被qemu-2.5使用-kernel启动，由于qemu内嵌的bootloader不支持x86 boot protocol v2.02，所以才决定在rootfs.img文件中安装grub-0.92来启动内核。
+```sh
+./configure
+make
+```
+
+##### 调试
+```sh
+# @主虚拟机
+cd /home/calvin/workspace/qemu-debug
+
+# 创建磁盘镜像rootfs.img-2.4.0
+dd if=/dev/zero of=rootfs.img-2.4.0 bs=1M count=100
+losetup /dev/loop0 rootfs.img-2.4.0
+# 安装grub
+dd if=../grub-0.92/stage1/stage1 of=rootfs.img-2.4.0 bs=512 count=1
+dd if=../grub-0.92/stage2/stage2 of=rootfs.img-2.4.0 bs=512 seek=1
+# 创建分区，一定要在写bootloader之后，否则MBR分区表会被覆盖。这里用默认操作，创建一个从2048扇区(1MB)开始的分区。
+fdisk /dev/loop0
+kpartx -av rootfs.img-2.4.0		# 会在/dev/mapper/下挂载虚拟硬盘中的分区
+mkfs.ext2 /dev/mapper/loop0p1
+mkdir -pv /mnt/rootfs-2.4.0
+mount /dev/mapper/loop0p1 /mnt/rootfs-2.4.0
+
+mkdir -vp /mnt/rootfs-2.4.0/{boot/grub,dev,sys,proc,etc}
+cp -v ../grub-0.92/stage1/stage1 /mnt/rootfs-2.4.0/boot/grub/
+cp -v ../grub-0.92/stage2/stage2 /mnt/rootfs-2.4.0/boot/grub/
+cp -v ../grub-0.92/stage2/e2fs_stage1_5 /mnt/rootfs-2.4.0/boot/grub/
+cat >> /mnt/rootfs-2.4.0/boot/grub/menu.lst << "EOF"
+# Begin /boot/grub/menu.lst
+
+# By default boot the first menu entry.
+default 0
+
+# Allow 10 seconds before booting the default.
+timeout 10
+
+# Use prettier colors.
+#color green/black light-green/black
+
+# The first entry is for LFS.
+title linux-2.4.0
+root (hd0,0)
+kernel --no-mem-option /boot/bzImage root=/dev/hda1
+EOF
+
+# 安装内核。如果需要安装模块，还要拷贝System.map。
+cp -v ../linux-2.4.0/arch/i386/boot/bzImage /mnt/rootfs-2.4.0/boot/
+
+# 安装busybox
+cp -vR ../busybox-0.60.3/_install/* /mnt/rootfs-2.4.0/
+cp -v ../busybox-0.60.3/scripts/inittab /mnt/rootfs-2.4.0/etc/inittab
+
+# 额外配置
+mknod /mnt/rootfs-2.4.0/dev/console c 5 1
+mknod /mnt/rootfs-2.4.0/dev/null c 1 3
+mknod /mnt/rootfs-2.4.0/dev/hda b 3 0
+
+```
+
+```sh
+ln -svf ../linux-2.4.0/vmlinux vmlinux-2.4.0
+qemu-system-i386 -curses -hda rootfs.img-2.4.0 -S -s
+gdb vmlinux-2.4.0
+```
+注：
+1. 第一次启动的时候会停在grub命令行，先root (hd0,0)再setup (hd0)就行。
+2. rootfs.img挂载的时候可以调试。如需卸载:
+```sh
+umount /mnt/rootfs-2.4.0
+kpartx -dv rootfs.img-2.4.0
+losetup -d /dev/loop0
 ```
 
 ==========================================================================================
